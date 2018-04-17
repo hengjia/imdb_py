@@ -6,15 +6,13 @@ except ImportError:
 	from urllib2 import urlopen
 import re
 
-class imdb_RS(object):
+class imdb(object):
 	def __init__(self, title = '', startYear = '', endYear = '', runtimeminutes = '',\
-				 genres = '', company = '', num_result = -1,\
-				  controversial = False):
+				 genres = '', company = '', num_result = -1):
 		'''
 		The object contains:
-		title, year, runtimeminutes, company, num_result, controversial
 		search_url
-		id_list
+		name_map: key: movie_id, value: name
 		movie_map: key: movie_id, value: rating list
 		max_rating
 		'''
@@ -31,7 +29,6 @@ class imdb_RS(object):
 			genres = '&genres=' + genres
 		self.name_map = {}
 		self.num_result = num_result
-		self.controversial = controversial
 		self.search_url = 'http://www.imdb.com/search/' + title\
 							+ year\
 							+ genres\
@@ -39,40 +36,70 @@ class imdb_RS(object):
 							+ runtimeminutes
 		page_num = 1
 		search_url_page = self.search_url + '&page=' + str(page_num) +'&ref_=adv_nxt'
+		# print(search_url_page)
+		current_id_list, num_result = self.fetch_id_in_one_page(search_url_page, num_result)
 		self.id_list = []
-		current_id_list = self.fetch_id_in_one_page(search_url_page)
+		# print('checkpoint1')
 		while len(current_id_list) != 0:
 			self.id_list += current_id_list
 			page_num += 1
 			search_url_page = self.search_url + '&page=' + str(page_num) +'&ref_=adv_nxt'
 			# print(search_url_page)
-			current_id_list = self.fetch_id_in_one_page(search_url_page)
+			current_id_list, num_result = self.fetch_id_in_one_page(search_url_page, num_result)
 			# print(current_id_list)
-		self.max_rating = -1
-		self.movie_map = {}
 		# print(self.id_list)
-		for this_id in self.id_list:
-			rating_url = 'http://www.imdb.com/title/'+ this_id + '/ratings?ref_=tt_ov_rt'
-			# print(rating_url)
-			rating_list = self.fetch_rating(rating_url)
-			self.movie_map[this_id] = rating_list
-			rating_num = sum(rating_list)
-			if rating_num > self.max_rating:
-				self.max_rating = rating_num
 
-	def rank(self, num_result = -1):
-		rank_map = {}
-		for key, value in self.movie_map.items():
-			rating = float(sum([value[i] * (10 - i) for i in range(10)])) / float(sum(value))
-			rank_map[key] = pow(float(rating) / float(10), 2) + pow(float(sum(value)) / float(self.max_rating), 2)
-		i = 0
-		for key in sorted(rank_map, key = rank_map.__getitem__, reverse = True):
-			if i == num_result:
-				break
-			print('NO.'+str(i+1))
-			print(self.name_map[key])
-			print('SCORE:', rank_map[key] / 2 * 100)
-			i += 1
+	def detail(self, movie_id):
+		seed = 'http://www.imdb.com/title/' + movie_id + '/'
+		thishtml = urlopen(seed).read()
+		soup = BeautifulSoup(thishtml, 'lxml')
+		genre_list = []
+		kw_list =[]
+		country_list = []
+		company_list = []
+		director_list = []
+		color_list = []
+		thisAll = soup.find_all('a')
+		for links in thisAll:
+			thisLink = links.get('href')
+			try:
+				if 'stry_gnr' in thisLink:
+					genre_list.append(links.text)
+				if 'stry_kw' in thisLink:
+					kw_list.append(links.text)
+				if 'country_of_origin' in thisLink:
+					country_list.append(links.text)
+				if '/company/' in thisLink:
+					company_list.append(links.text)
+				if 'tt_ov_dr' in thisLink:
+					director_list.append(links.text)
+				if 'colors=' in thisLink:
+					color_list.append(thisLink)
+				if 'tt_ov_rt' in thisLink and 'title' in thisLink:
+					rating = int(links.text.replace(',', ''))
+			except Exception:
+				pass
+		detail_map = {}
+		detail_map['genre'] = genre_list
+		detail_map['keyword'] = kw_list
+		detail_map['country'] = country_list
+		detail_map['company'] = company_list
+		detail_map['director'] = director_list
+		detail_map['color'] = color_list
+		detail_map['rating'] = rating
+		return detail_map
+
+	def rank(self):
+		rank_list = []
+		for movie_id in self.id_list:
+			rank_list.append({movie_id: self.name_map[movie_id]})
+		return rank_list
+
+	def details(self):
+		details_map = {}
+		for movie_id in self.id_list:
+			details_map[movie_id] = self.detail(movie_id)	
+		return details_map
 
 	def process_data(self, data):
 		'''
@@ -110,7 +137,7 @@ class imdb_RS(object):
 		return self.process_data(data)
 		# return [int(data[i].replace(',', '')) for i in rating_num]
 
-	def fetch_id_in_one_page(self, seed):
+	def fetch_id_in_one_page(self, seed, num=-1):
 		'''
 		INPUT:	seed(URL)
 		OUTPUT: a list of id found in one page. If an empty list is returned,
@@ -123,28 +150,25 @@ class imdb_RS(object):
 		thisAll = soup.find_all('a')
 		id_list = []
 		for links in thisAll:
+			if num == 0:
+				# print('checkpoint2')
+				break
 			thisLink = links.get('href')
 			if 'title/tt' in thisLink:
 				this_id = thisLink[7:16]
 				if thisLink[-5:] == 'li_tt':
-					# print(thisLink)
 					self.name_map[this_id] = links.text
+					num -= 1
 				if thisLink[-5:] == '_li_i':
-					# print(thisLink)
 					assert this_id not in id_list
 					id_list.append(this_id)
 		# print(id_list)
 		# print(self.name_map)
-		return id_list
+		return id_list, num
 
 def main():
-	# testurl = 'http://www.imdb.com/title/tt0068646/ratings?ref_=tt_ov_rt'
-	# testurl2 = 'http://www.imdb.com/search/title?title=The%20Godfather&page=6&ref_=adv_nxt'
-	# rating_num = fetch_rating(testurl)
-	# id_list = fetch_id(testurl2)
-	# print(id_list)
-	temp = imdb_RS('the godfather', '1990-01-01', '1991-01-01')
-	temp.rank()
+	temp = imdb_RS('the godfather', num_result=5)
+	print(temp.rank())
 
 if __name__ == '__main__':
 	main()
