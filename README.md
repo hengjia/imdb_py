@@ -1,6 +1,6 @@
 # # IMDb python package
 ## Introduction:
-This is a package which is trying to make fetch information needed from IMDb since there's no official API from IMDb right now. This package can easily fetch all important information one may need about any movie.
+This is a package which is trying to fetch information needed from IMDb since there's no official API from IMDb right now. This package can easily fetch all important information one may need about any movie.
 
 ## Usage:
 Try:
